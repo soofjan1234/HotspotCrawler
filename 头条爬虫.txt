@@ -1,0 +1,72 @@
+
+
+
+ 
+
+1. 获取今日头条文章列表接口
+找到了获取文章列表的接口，今日头条的接口做了反爬虫处理，每次请求接口时都需要带上一组加密字符，否则接口报错，于是我通过百度，发现今日头条的加密字符串生成来自于acrawler.js文件，我将js文件下载到本地按照网友的方法发现代码跑起来了加密字符串生成了，然后我加成功拼接url成功获取到了文章列表。
+
+
+
+ 
+
+将acrawler.js下载到本地，引入到自己的html文件中，并执行代码 
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>getSig</title>
+    <script src="./acrawler.js"></script>
+</head>
+<body>
+    <p id="sigUrl"></p>
+</body>
+<script>
+ 
+    var channel = "3189398972" // 娱乐
+    // var channel = "3189398999" // 科技
+ 
+    function getSSSS(){
+        var time = new Date();
+        var str = "https://www.toutiao.com/api/pc/list/feed?channel_id="+channel+"&max_behot_time="+time.getTime()+"&offset=0&category=pc_profile_channel&client_extra_params=%7B%22short_video_item%22:%22filter%22%7D&aid=24&app_name=toutiao_web"
+        var sig = window.byted_acrawler.sign({url:str})
+       
+        var url = str+"&_signature="+sig;
+        document.getElementById("sigUrl").innerText = url
+        console.log(url);
+    }
+ 
+    getSSSS();
+ 
+    setInterval(function(){
+        getSSSS();
+    },30000)
+ 
+</script>
+
+因为js运行依靠window浏览器对象，所以Python无法直接运行js代码获取加密之后的url，这里我使用selenium运行浏览器，打开生成url的html文件，获取加密处理后的url
+
+pip install requests
+主要代码： 
+
+# 网络请求工具
+import requests
+ 
+headers = {
+         # 设置User-Agent，模拟浏览器发送请求
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        # 设置Cookie，用于身份验证或其他需要的信息
+        'Cookie': '__ac_signature=_02B4Z6wo00f01Lz3yHgAAIDB3.0IExdN.9i818zAAEpR33;tt_webid=7309719685489198604;ttcid=fb73866ceb7a44cdb848344abfc11b6364;s_v_web_id=verify_lpur8vrr_aKDsfWBn_AThk_4UlU_8RpK_Ci9lGCzIBKbb; _ga=GA1.1.1051493470.1701926754; local_city_cache=%E4%B8%B4%E6%B2%82; csrftoken=4561fa578aa7c7bc7d3ac8f87ac7fad1; __feed_out_channel_key=entertainment; passport_csrf_token=a296ea89de4f632e00534cd16812d593; passport_csrf_token_default=a296ea89de4f632e00534cd16812d593; msToken=Lhx7DAYTtQJiiCVIVmYNqtpQkUVKq8RzEzhUZAslgKw_w5gJ_vSlmCJKsQoQUyXXoJzHhluRQFpfceUoT2n2IoACypVJ-aD7RCuXC7iI; tt_scid=0lfkb7lPohYDsWmjDuFAe7L3oLDo0KsbKzlhKzl1CQ2im2TQypCzPCKr.jkBHxexd641; ttwid=1%7CVPO9aK7JwsvyYUFWA3MR5i_pw1b4nic0TD5-jp-zjVc%7C1702450449%7C067c9bd8be4c0a21dc4e60bc225ee29072184eeb24503d5d6cc26b9554d20d26; _ga_QEHZPBE5HH=GS1.1.1702455638.13.0.1702455638.0.0.0.0.0'
+    }
+ 
+# 请求接口获取json数据
+res = requests.get(url,headers=headers)
+python
+上述代码中User-Agent和Cookie直接在浏览器请求接口中获取就行
+User-Agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36
+Cookie：tt_webid=7539160599922771506; gfkadpd=24,6457; ttcid=96f31a5303ff446888cdd97b0ce826aa10; s_v_web_id=verify_mhh6vytr_WRrPq3n4_VJcI_4iBl_8AZD_OZ5llssRhyoi; local_city_cache=%E6%B7%B1%E5%9C%B3; x-web-secsdk-uid=1daa6a0a-052a-45b2-a82a-cdecf0aa6a26; csrftoken=cd1d56faae88a83e3c3fe971771132fd; ttwid=1%7CdK9jRW5yTPJzwNRpENM0dK2ceNUs77Ao7OqRFdiTr-8%7C1762072081%7Cae7d04ab2f5d7012a773265eeaf16944ffb343369676f94b205e96fa8bb25f39; tt_scid=07I17YkMmkhb4v6R7GUGgTidnKDrSCUhU3C2n5bBmPtHIdIV5-HqtObQUO9hF7Sr0780
+
+后期建议：Selenium / Playwright 自动提取 Cookie 与 UA。每次爬取前用 Selenium 打开一次网页刷新 Cookie
