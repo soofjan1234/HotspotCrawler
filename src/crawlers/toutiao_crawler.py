@@ -4,15 +4,27 @@ from selenium.webdriver.chrome.options import Options
 import time
 import re
 import os
+import sys
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+
+# 导入配置管理类
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 使用相对导入方式
+from config.config_manager import ConfigManager
  
 url = "https://www.toutiao.com/"
  
+# 初始化配置管理器
+config = ConfigManager()
+# 确保必要的目录存在
+config.ensure_directories()
+
 options = Options()#创建一个 Options 类的实例 options，用于配置 Chrome 浏览器的启动选项。
-# options.add_argument("--headless")  # 无界面模式
-options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36") 
-#这里模拟了 Chrome 120 浏览器在 Windows 10 系统上的请求，避免被网站识别为爬虫而限制访问。
+options.add_argument("--headless")  # 无界面模式
+options.add_argument(f"user-agent={config.user_agent}")
+#这里模拟了浏览器在当前系统上的请求，避免被网站识别为爬虫而限制访问。
  
  
 driver = webdriver.Chrome(options=options)#创建一个 webdriver.Chrome 类的实例 driver，并将之前配置好的 options 传递给它
@@ -20,7 +32,6 @@ driver.get(url)#传入之前定义的 url 变量
 time.sleep(3)  # 等待 JavaScript 执行
 html = driver.page_source  # 获取渲染后的HTML
 driver.quit() #关闭 Chrome 浏览器实例并释放相关资源。
-
 
 
 # 使用正则表达式提取文章链接和标题
@@ -136,96 +147,174 @@ def extract_and_download_videos(html_content, save_dir):
         print(f"  提取视频信息失败: {str(e)}")
     return downloaded_videos
 
-# 创建媒体文件保存目录
-media_base_dir = '/Users/Zhuanz/projects/PythonWS/HotspotCrawler/media'
-os.makedirs(media_base_dir, exist_ok=True)
+# 获取配置的路径
+media_base_dir = config.media_base_dir
 
-# 只处理前3条新闻
-content_file = '/Users/Zhuanz/projects/PythonWS/HotspotCrawler/内容.txt'
-with open(content_file, 'w', encoding='utf-8') as f:
-    for i, result in enumerate(results[:3]):
-        article_url = 'https://www.toutiao.com' + result[0]
-        article_title = result[1]
-        print(f"\n正在处理第 {i+1} 条新闻:")
-        print(f"标题: {article_title}")
-        print(f"URL: {article_url}")
-        
-        # 创建新的浏览器实例访问文章详情页
-        article_options = Options()
-        # article_options.add_argument("--headless")  # 无界面模式
-        article_options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
-        
-        article_driver = webdriver.Chrome(options=article_options)
-        article_driver.get(article_url)
-        time.sleep(3)  # 等待页面加载
-        
-        article_html = article_driver.page_source
-        article_driver.quit()
-        
-        # 创建该文章的媒体保存目录
-        # 清理标题，去除不能作为文件名的字符
-        safe_title = re.sub(r'[\\/:*?"<>|]', '_', article_title)
-        article_media_dir = os.path.join(media_base_dir, f"article_{i+1}_{safe_title[:20]}")
-        os.makedirs(article_media_dir, exist_ok=True)
-        
-        # 尝试找到文章内容区域
-        content_match = re.search(r'syl-device-pc">(.*?)</article>', article_html, re.S)
-        if content_match:
-            article_content_html = content_match.group(1)
-            # 使用BeautifulSoup提取纯文本内容
-            article_text = extract_content_with_bs(article_content_html)
+# 使用配置管理器中的文章ID记录文件路径
+article_id_file = config.article_id_file
+
+# 函数：读取已爬取的文章ID
+def read_article_ids():
+    article_ids = set()
+    try:
+        if os.path.exists(article_id_file):
+            # 检查文件最后修改时间，两周前的记录需要清理
+            file_mod_time = os.path.getmtime(article_id_file)
+            two_weeks_ago = (datetime.now() - timedelta(days=14)).timestamp()
             
-            # 提取并下载图片
-            print(f"  开始提取图片...")
-            soup = BeautifulSoup(article_content_html, 'html.parser')
-            img_tags = soup.find_all('img')
-            img_urls = [img.get('src') for img in img_tags if img.get('src')]
-            # 还可以尝试获取其他可能的图片属性
-            data_src_urls = [img.get('data-src') for img in img_tags if img.get('data-src')]
-            img_urls.extend(data_src_urls)
+            with open(article_id_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = line.strip().split(',')
+                    if len(parts) == 2:
+                        article_id, timestamp = parts
+                        # 只保留两周内的记录
+                        if float(timestamp) >= two_weeks_ago:
+                            article_ids.add(article_id)
             
-            # 去重
-            img_urls = list(set(img_urls))
-            print(f"  找到 {len(img_urls)} 张图片")
-            
-            # 创建图片保存子目录
-            image_dir = os.path.join(article_media_dir, 'images')
-            os.makedirs(image_dir, exist_ok=True)
-            downloaded_images = download_images(img_urls, image_dir)
-            
-            # 提取并下载视频
-            print(f"  开始提取视频...")
-            video_dir = os.path.join(article_media_dir, 'videos')
-            os.makedirs(video_dir, exist_ok=True)
-            downloaded_videos = extract_and_download_videos(article_content_html, video_dir)
-            
-            # 写入文件
-            f.write(f"第 {i+1} 条新闻\n")
-            f.write(f"标题: {article_title}\n")
-            f.write("正文内容:\n")
-            f.write(article_text)
+            # 如果清理了旧记录，需要更新文件
+            if len(article_ids) < len(open(article_id_file, 'r').readlines()):
+                with open(article_id_file, 'w', encoding='utf-8') as f:
+                    current_timestamp = str(time.time())
+                    for article_id in article_ids:
+                        f.write(f"{article_id},{current_timestamp}\n")
+    except Exception as e:
+        print(f"读取文章ID文件时出错: {str(e)}")
+    return article_ids
+
+# 函数：保存文章ID到文件
+def save_article_id(article_id):
+    try:
+        with open(article_id_file, 'a', encoding='utf-8') as f:
+            timestamp = str(time.time())
+            f.write(f"{article_id},{timestamp}\n")
+    except Exception as e:
+        print(f"保存文章ID时出错: {str(e)}")
+
+# 读取已爬取的文章ID
+crawled_ids = read_article_ids()
+print(f"已爬取的文章ID数量: {len(crawled_ids)}")
+
+# 处理每个文章
+processed_count = 0
+max_articles = 3  # 最多处理3篇文章
+
+for i, result in enumerate(results):
+    if processed_count >= max_articles:
+        break
+        
+    article_relative_url = result[0]
+    article_url = 'https://www.toutiao.com' + article_relative_url
+    article_title = result[1]
+    
+    # 从URL中提取文章ID
+    article_id_match = re.search(r'/article/(\d+)/', article_relative_url)
+    if not article_id_match:
+        print(f"无法从URL中提取文章ID: {article_url}")
+        continue
+    
+    article_id = article_id_match.group(1)
+    
+    # 检查是否已爬取过该文章
+    if article_id in crawled_ids:
+        print(f"文章 {article_id} 已爬取过，跳过")
+        continue
+    
+    processed_count += 1
+    print(f"\n正在处理第 {processed_count} 条新闻:")
+    print(f"标题: {article_title}")
+    print(f"URL: {article_url}")
+    print(f"文章ID: {article_id}")
+    
+    # 创建新的浏览器实例访问文章详情页
+    article_options = Options()
+    article_options.add_argument("--headless")  # 无界面模式
+    article_options.add_argument(f"user-agent={config.user_agent}")
+    
+    article_driver = webdriver.Chrome(options=article_options)
+    article_driver.get(article_url)
+    time.sleep(3)  # 等待页面加载
+    
+    article_html = article_driver.page_source
+    article_driver.quit()
+    
+    # 创建该文章的媒体保存目录
+    # 清理标题，去除不能作为文件名的字符
+    safe_title = re.sub(r'[\\/:*?"<>|]', '_', article_title)
+    # 使用时间戳_标题前8个字的格式命名文件夹
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    article_media_dir = os.path.join(media_base_dir, f"{timestamp}_{safe_title[:8]}")
+    os.makedirs(article_media_dir, exist_ok=True)
+    
+    # 保存文章ID到文件
+    save_article_id(article_id)
+        
+    # 尝试找到文章内容区域
+    content_match = re.search(r'syl-device-pc">(.*?)</article>', article_html, re.S)
+    if content_match:
+        article_content_html = content_match.group(1)
+        # 使用BeautifulSoup提取纯文本内容
+        article_text = extract_content_with_bs(article_content_html)
+        
+        # 提取并下载图片
+        print(f"  开始提取图片...")
+        soup = BeautifulSoup(article_content_html, 'html.parser')
+        img_tags = soup.find_all('img')
+        img_urls = [img.get('src') for img in img_tags if img.get('src')]
+        # 还可以尝试获取其他可能的图片属性
+        data_src_urls = [img.get('data-src') for img in img_tags if img.get('data-src')]
+        img_urls.extend(data_src_urls)
+        
+        # 去重
+        img_urls = list(set(img_urls))
+        print(f"  找到 {len(img_urls)} 张图片")
+        
+        # 创建图片保存子目录
+        image_dir = os.path.join(article_media_dir, 'images')
+        os.makedirs(image_dir, exist_ok=True)
+        downloaded_images = download_images(img_urls, image_dir)
+        
+        # 提取并下载视频
+        print(f"  开始提取视频...")
+        video_dir = os.path.join(article_media_dir, 'videos')
+        os.makedirs(video_dir, exist_ok=True)
+        downloaded_videos = extract_and_download_videos(article_content_html, video_dir)
+        
+        # 创建文章的content.txt文件
+        article_content_file = os.path.join(article_media_dir, 'content.txt')
+        with open(article_content_file, 'w', encoding='utf-8') as article_f:
+            article_f.write(f"第 {i+1} 条新闻\n")
+            article_f.write(f"标题: {article_title}\n")
+            article_f.write("正文内容:\n")
+            article_f.write(article_text)
             
             # 写入媒体文件信息
-            f.write(f"\n媒体文件信息:\n")
-            f.write(f"  图片数量: {len(downloaded_images)}\n")
-            for img_path in downloaded_images:
-                f.write(f"  - {img_path}\n")
+            # article_f.write(f"\n媒体文件信息:\n")
+            # article_f.write(f"  图片数量: {len(downloaded_images)}\n")
+            # for img_path in downloaded_images:
+            #     # 保存相对路径
+            #     rel_img_path = os.path.relpath(img_path, article_media_dir)
+            #     article_f.write(f"  - {rel_img_path}\n")
             
-            f.write(f"  视频数量: {len(downloaded_videos)}\n")
-            for video_path in downloaded_videos:
-                f.write(f"  - {video_path}\n")
+            # article_f.write(f"  视频数量: {len(downloaded_videos)}\n")
+            # for video_path in downloaded_videos:
+            #     # 保存相对路径
+            #     rel_video_path = os.path.relpath(video_path, article_media_dir)
+            #     article_f.write(f"  - {rel_video_path}\n")
             
-            f.write("\n" + "="*50 + "\n\n")
-            
-            print(f"文章内容已提取，长度: {len(article_text)} 字符")
-            print(f"图片下载完成，共 {len(downloaded_images)} 张")
-            print(f"视频下载完成，共 {len(downloaded_videos)} 个")
-        else:
-            f.write(f"第 {i+1} 条新闻\n")
-            f.write(f"标题: {article_title}\n")
-            f.write("正文内容: 未能提取到文章内容\n")
-            f.write("\n" + "="*50 + "\n\n")
+            # article_f.write("\n" + "="*50 + "\n\n")
+        
+        print(f"文章内容已提取，长度: {len(article_text)} 字符")
+        print(f"图片下载完成，共 {len(downloaded_images)} 张")
+        print(f"视频下载完成，共 {len(downloaded_videos)} 个")
+    else:
+            # 创建文章的content.txt文件
+            article_content_file = os.path.join(article_media_dir, 'content.txt')
+            with open(article_content_file, 'w', encoding='utf-8') as article_f:
+                article_f.write(f"第 {i+1} 条新闻\n")
+                article_f.write(f"标题: {article_title}\n")
+                article_f.write("正文内容: 未能提取到文章内容\n")
+                article_f.write("\n" + "="*50 + "\n\n")
             print("未能提取到文章内容")
-
-print(f"\n所有新闻内容已保存到: {content_file}")
+print(f"\n处理完成，共处理了 {processed_count} 篇新文章")
 print(f"媒体文件已保存到: {media_base_dir}")
+print(f"文章ID记录保存在: {article_id_file}")
