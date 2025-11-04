@@ -22,7 +22,7 @@ config = ConfigManager()
 config.ensure_directories()
 
 options = Options()#创建一个 Options 类的实例 options，用于配置 Chrome 浏览器的启动选项。
-options.add_argument("--headless")  # 无界面模式
+# options.add_argument("--headless")  # 无界面模式
 options.add_argument(f"user-agent={config.user_agent}")
 #这里模拟了浏览器在当前系统上的请求，避免被网站识别为爬虫而限制访问。
  
