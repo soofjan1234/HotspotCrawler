@@ -1,6 +1,6 @@
-
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 import time
 import re
 import os
@@ -9,35 +9,257 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
-# 导入配置管理类
+# 添加项目根目录到sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# 使用相对导入方式
+
+# 导入配置管理器
 from config.config_manager import ConfigManager
- 
+
+# 通用函数：从HTML中提取未爬取的文章
+def extract_uncrawled_article(html, channel_name, crawled_ids, is_homepage=False):
+    # 提取所有可能的文章匹配项（包括两种格式）
+    all_matches = []
+    
+    # 只有在首页时才执行five-item的正则匹配
+    if is_homepage:
+        five_item_matches = re.findall('<div class="five-item"><i.*?</i><a href="(.*?)".*?aria-label="(.*?)">', html, re.S)
+        all_matches.extend(five_item_matches)
+    
+    # 执行feed-card-article-l的正则匹配
+    article_matches = re.findall('<div class="feed-card-article-l"><a href="(.*?)".*?aria-label="(.*?)">', html, re.S)
+    all_matches.extend(article_matches)
+    
+    print(f"{channel_name} 频道提取到 {len(all_matches)} 篇文章")
+    
+    # 遍历所有文章，找到第一个未爬取的文章
+    for i, match in enumerate(all_matches):
+        article_relative_url = match[0]
+        article_title = match[1]
+        
+        if article_relative_url.startswith('https://'):
+            article_url = article_relative_url
+        else:
+            article_url = 'https://www.toutiao.com' + article_relative_url
+        
+        # 从URL中提取文章ID - 能处理完整URL和相对URL
+        if is_homepage:
+            # 首页的URL是完整的，直接从article_url中提取
+            article_id_match = re.search(r'/article/(\d+)/', article_url)
+        else:
+            # 频道页面的URL是相对的，从article_relative_url中提取
+            article_id_match = re.search(r'/article/(\d+)/', article_relative_url)
+        if article_id_match:
+            article_id = article_id_match.group(1)
+            
+            # 检查文章是否已爬取
+            if article_id in crawled_ids:
+                print(f"文章 {article_id} ({article_title}) 已爬取过，尝试提取 {channel_name} 频道的下一篇文章")
+                continue  # 继续尝试下一篇文章
+            else:
+                print(f"找到 {channel_name} 频道第{i+1}篇未爬取的文章: {article_title}")
+                print(f"文章URL: {article_url}")
+                if is_homepage:
+                    # 首页返回不同格式
+                    return article_url, article_title, True
+                else:
+                    # 普通频道返回
+                    return article_title, article_url
+        else:
+            print(f"无法从URL中提取文章ID: {article_url}，尝试下一篇")
+    
+    # 如果所有文章都已爬取过
+    print(f"{channel_name} 频道所有文章都已爬取过")
+    if is_homepage:
+        # 首页返回空结果
+        return None, None, False
+    else:
+        # 普通频道返回
+        return None, None
+
+# 点击导航项并提取文章标题的函数（支持重复时自动提取同板块下一篇）
+def click_nav_item_and_extract_title(driver, nav_items, index, channel_name, crawled_ids):
+    try:
+        if index >= len(nav_items):
+            print(f"警告: 索引 {index} 超出了导航项列表范围（共 {len(nav_items)} 个）")
+            return None, None
+        
+        target_item = nav_items[index]
+        print(f"\n准备点击第 {index+1} 个导航项: {channel_name} (索引: {index})")
+        
+        # 获取点击前的文本（用于确认）
+        item_text = target_item.text.strip()
+        print(f"导航项文本: {item_text}")
+        
+        # 确保元素在可视区域内
+        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", target_item)
+        time.sleep(1)
+        
+        # 使用JavaScript点击该元素
+        print(f"使用JavaScript点击 {channel_name} 导航项...")
+        driver.execute_script("arguments[0].click();", target_item)
+        print(f"{channel_name} 导航项点击成功")
+        
+        # 等待页面切换和加载
+        time.sleep(3)
+        
+        # 获取页面内容
+        html = driver.page_source
+        
+        # 使用通用函数提取未爬取的文章 - 注意：此处is_homepage为False，返回值是(title, url)
+        article_title, article_url = extract_uncrawled_article(html, channel_name, crawled_ids, is_homepage=False)
+        return article_title, article_url
+    except Exception as e:
+        print(f"操作 {channel_name} 频道时发生错误: {e}")
+        return None, None
+
+# 头条首页URL
 url = "https://www.toutiao.com/"
- 
-# 初始化配置管理器
+
+# 创建配置管理器实例
 config = ConfigManager()
+
 # 确保必要的目录存在
 config.ensure_directories()
 
+# 创建Chrome浏览器配置
 options = Options()#创建一个 Options 类的实例 options，用于配置 Chrome 浏览器的启动选项。
 # options.add_argument("--headless")  # 无界面模式
+options.add_argument("--log-level=3")  # 只显示严重错误
+options.add_experimental_option('excludeSwitches', ['enable-logging'])  # 禁止日志输出
+options.add_experimental_option('useAutomationExtension', False)
 options.add_argument(f"user-agent={config.user_agent}")
-#这里模拟了浏览器在当前系统上的请求，避免被网站识别为爬虫而限制访问。
- 
- 
-driver = webdriver.Chrome(options=options)#创建一个 webdriver.Chrome 类的实例 driver，并将之前配置好的 options 传递给它
-driver.get(url)#传入之前定义的 url 变量
-time.sleep(3)  # 等待 JavaScript 执行
-html = driver.page_source  # 获取渲染后的HTML
-driver.quit() #关闭 Chrome 浏览器实例并释放相关资源。
+# 存储所有频道的文章信息
+all_channel_articles = []
 
+# 获取配置的路径
+media_base_dir = config.media_base_dir
 
-# 使用正则表达式提取文章链接和标题
-# 更新后的正则表达式更准确地匹配HTML结构
-results = re.findall('<div class="feed-card-article-l"><a href="(.*?)".*?aria-label="(.*?)">', html, re.S)
-print(f"\n共提取到 {len(results)} 条新闻")
+# 使用配置管理器中的文章ID记录文件路径
+article_id_file = config.article_id_file
+
+# 函数：读取已爬取的文章ID
+def read_article_ids():
+    article_ids = set()
+    try:
+        if os.path.exists(article_id_file):
+            # 检查文件最后修改时间，两周前的记录需要清理
+            file_mod_time = os.path.getmtime(article_id_file)
+            two_weeks_ago = (datetime.now() - timedelta(days=14)).timestamp()
+            
+            with open(article_id_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = line.strip().split(',')
+                    if len(parts) == 2:
+                        article_id, timestamp = parts
+                        # 只保留两周内的记录
+                        if float(timestamp) >= two_weeks_ago:
+                            article_ids.add(article_id)
+            
+            # 如果清理了旧记录，需要更新文件
+            if len(article_ids) < len(open(article_id_file, 'r').readlines()):
+                with open(article_id_file, 'w', encoding='utf-8') as f:
+                    current_timestamp = str(time.time())
+                    for article_id in article_ids:
+                        f.write(f"{article_id},{current_timestamp}\n")
+    except Exception as e:
+        print(f"读取文章ID文件时出错: {str(e)}")
+    return article_ids
+
+# 函数：保存文章ID到文件
+def save_article_id(article_id):
+    try:
+        with open(article_id_file, 'a', encoding='utf-8') as f:
+            timestamp = str(time.time())
+            f.write(f"{article_id},{timestamp}\n")
+    except Exception as e:
+        print(f"保存文章ID时出错: {str(e)}")
+
+# 读取已爬取的文章ID（先读取，然后在提取阶段就进行重复检查）
+crawled_ids = read_article_ids()
+print(f"已爬取的文章ID数量: {len(crawled_ids)}")
+
+try:
+    # 创建浏览器实例
+    driver = webdriver.Chrome(options=options)#创建一个 webdriver.Chrome 类的实例 driver，并将之前配置好的 options 传递给它
+    
+    # 访问头条网站
+    print(f"正在访问: {url}")
+    driver.get(url)
+    time.sleep(5)  # 等待页面完全加载
+    
+    # 步骤1：在首页找到今日要闻（推荐频道）
+    print("\n步骤1: 在首页查找今日要闻...")
+    try:
+        # 查找今日要闻区域
+        html = driver.page_source
+        
+        # 使用通用函数提取首页未爬取的文章
+        article_url, article_title, found_homepage_article = extract_uncrawled_article(html, "今日要闻", crawled_ids, is_homepage=True)
+        
+        if found_homepage_article and article_url and article_title:
+            all_channel_articles.append(("今日要闻", article_url, article_title))
+        else:
+            print(f"首页今日要闻无未爬取文章")
+    except Exception as e:
+        print(f"查找今日要闻时发生错误: {e}")
+    
+    # 步骤2-5：查找导航项并执行切换
+    print("\n正在查找div.feed-default-nav-item元素...")
+    
+    try:
+        # 查找所有具有feed-default-nav-item类的div元素
+        nav_items = driver.find_elements(By.CLASS_NAME, "feed-default-nav-item")
+        print(f"找到 {len(nav_items)} 个feed-default-nav-item元素")
+        
+        # 打印所有导航项文本，用于调试
+        print("导航项列表:")
+        for i, item in enumerate(nav_items):
+            print(f"{i}: {item.text.strip()}")
+        
+        # 定义要点击的导航项索引和名称
+        nav_to_click = [
+            (2, "城市相关"),
+            (4, "财经"),
+            (5, "科技"),
+            (6, "热点")
+        ]
+        
+        # 依次点击各个导航项并提取文章（支持重复时自动切换到同板块下一篇）
+        for index, channel_name in nav_to_click:
+            # 传递crawled_ids参数给函数，使其能够在提取时进行判重
+            title, article_url = click_nav_item_and_extract_title(driver, nav_items, index, channel_name, crawled_ids)
+            if title and article_url:
+                all_channel_articles.append((channel_name, article_url, title))
+            else:
+                print(f"{channel_name} 频道未能找到未爬取的文章")
+    except Exception as e:
+        print(f"操作导航项时发生错误: {e}")
+    
+    finally:
+        # 关闭浏览器
+        print("\n关闭浏览器...")
+        driver.quit()
+        
+    # 显示所有频道的文章信息
+    print("\n===== 所有频道文章汇总 =====")
+    for i, (channel, url, title) in enumerate(all_channel_articles):
+        print(f"{i+1}. {channel}: {title}")
+        print(f"   URL: {url}")
+    print(f"\n共获取到 {len(all_channel_articles)} 个频道的文章")
+    
+    # 准备处理这些文章（转换为原有格式）
+    results = []
+    for channel, article_url, article_title in all_channel_articles:
+        # 提取相对URL用于文章ID提取
+        match = re.search(r'https://www\.toutiao\.com(.*?)$', article_url)
+        if match:
+            relative_url = match.group(1)
+            results.append((relative_url, f"[{channel}] {article_title}"))
+    
+    print(f"共准备处理 {len(results)} 条新闻")
+
+except Exception as e:
+    print(f"发生错误: {e}")
 
 # 定义提取文章内容的函数
 def extract_content_with_bs(html_content):
@@ -94,8 +316,9 @@ def extract_and_download_videos(html_content, save_dir):
         # 使用BeautifulSoup解析HTML
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # 查找视频元素
         video_elements = soup.find_all('video')
+            
+        print(f"找到 {len(video_elements)} 个视频元素")
         
         for i, video in enumerate(video_elements):
             try:
@@ -196,7 +419,7 @@ print(f"已爬取的文章ID数量: {len(crawled_ids)}")
 
 # 处理每个文章
 processed_count = 0
-max_articles = 3  # 最多处理3篇文章
+max_articles = 1  # 最多处理1篇文章
 
 for i, result in enumerate(results):
     if processed_count >= max_articles:
@@ -227,7 +450,7 @@ for i, result in enumerate(results):
     
     # 创建新的浏览器实例访问文章详情页
     article_options = Options()
-    article_options.add_argument("--headless")  # 无界面模式
+    # article_options.add_argument("--headless")  # 无界面模式
     article_options.add_argument(f"user-agent={config.user_agent}")
     
     article_driver = webdriver.Chrome(options=article_options)
@@ -242,7 +465,7 @@ for i, result in enumerate(results):
     safe_title = re.sub(r'[\\/:*?"<>|]', '_', article_title)
     # 使用时间戳_标题前8个字的格式命名文件夹
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    article_media_dir = os.path.join(media_base_dir, f"{timestamp}_{safe_title[:8]}")
+    article_media_dir = os.path.join(media_base_dir, f"{timestamp}_{safe_title[:16]}")
     os.makedirs(article_media_dir, exist_ok=True)
     
     # 保存文章ID到文件
@@ -307,14 +530,7 @@ for i, result in enumerate(results):
         print(f"图片下载完成，共 {len(downloaded_images)} 张")
         print(f"视频下载完成，共 {len(downloaded_videos)} 个")
     else:
-            # 创建文章的content.txt文件
-            article_content_file = os.path.join(article_media_dir, 'content.txt')
-            with open(article_content_file, 'w', encoding='utf-8') as article_f:
-                article_f.write(f"第 {i+1} 条新闻\n")
-                article_f.write(f"标题: {article_title}\n")
-                article_f.write("正文内容: 未能提取到文章内容\n")
-                article_f.write("\n" + "="*50 + "\n\n")
-            print("未能提取到文章内容")
+        print("未能提取到文章内容")
 print(f"\n处理完成，共处理了 {processed_count} 篇新文章")
 print(f"媒体文件已保存到: {media_base_dir}")
 print(f"文章ID记录保存在: {article_id_file}")
