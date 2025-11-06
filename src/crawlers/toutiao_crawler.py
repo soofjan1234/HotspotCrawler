@@ -6,6 +6,7 @@ import re
 import os
 import sys
 import random
+from bs4 import BeautifulSoup
 
 # 添加项目根目录到sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +19,9 @@ from crawlers.article_extractor import ArticleExtractor
 from crawlers.media_downloader import MediaDownloader
 from crawlers.article_manager import ArticleManager
 from datetime import datetime
+
+# 从工具模块导入print_to_queue
+from utils.log_utils import print_to_queue
 
 class ToutiaoCrawler:
     """头条爬虫主类"""
@@ -82,16 +86,16 @@ class ToutiaoCrawler:
             # 给选中的频道增加1篇
             allocation[selected_channel] += 1
         
-        print(f"优化后的文章分配方案: {allocation}")
+        print_to_queue(f"优化后的文章分配方案: {allocation}")
         return allocation
     
     def crawl_homepage(self):
         """爬取首页内容，按照分配比例获取文章"""
-        print("\n步骤1: 在首页查找今日要闻...")
+        print_to_queue("步骤1: 在首页查找今日要闻...")
         try:
             # 获取今日要闻的分配数量
             need_count = self.article_allocation.get("今日要闻", 1)
-            print(f"需要从今日要闻获取 {need_count} 篇文章")
+            print_to_queue(f"需要从今日要闻获取 {need_count} 篇文章")
             
             # 查找今日要闻区域
             html = self.driver.page_source
@@ -115,7 +119,7 @@ class ToutiaoCrawler:
                         processed_ids.add(article_id)
                         self.all_channel_articles.append(("今日要闻", article_url, article_title))
                         collected_count += 1
-                        # print(f"已添加首页文章: {article_title}")
+                        # print_to_queue(f"已添加首页文章: {article_title}")
                         
                         # 如果达到需要的数量，停止收集
                         if collected_count >= need_count:
@@ -124,14 +128,14 @@ class ToutiaoCrawler:
                 # 短暂休眠避免请求过快
                 time.sleep(0.5)
                 
-            print(f"今日要闻文章收集完成，共 {collected_count} 篇")
+            print_to_queue(f"今日要闻文章收集完成，共 {collected_count} 篇")
             
         except Exception as e:
-            print(f"查找今日要闻时发生错误: {e}")
+            print_to_queue(f"查找今日要闻时发生错误: {e}")
     
     def crawl_channels(self):
         """爬取各个频道，按照分配比例获取文章"""
-        print("\n正在查找div.feed-default-nav-item元素...")
+        print_to_queue("n正在查找div.feed-default-nav-item元素...")
         
         try:
             # 查找所有具有feed-default-nav-item类的div元素
@@ -149,7 +153,7 @@ class ToutiaoCrawler:
             for index, channel_name in nav_to_click:
                 # 获取当前频道的分配数量
                 need_count = self.article_allocation.get(channel_name, 2)
-                print(f"\n正在处理 {channel_name} 频道，需要获取 {need_count} 篇文章...")
+                print_to_queue(f"正在处理 {channel_name} 频道，需要获取 {need_count} 篇文章...")
                 
                 # 保存当前频道已处理的文章ID，避免重复
                 processed_ids = set()
@@ -163,7 +167,7 @@ class ToutiaoCrawler:
                     self.driver.execute_script("arguments[0].click();", target_item)
                     time.sleep(3)  # 等待页面加载
                 except Exception as e:
-                    print(f"点击 {channel_name} 频道失败: {e}")
+                    print_to_queue(f"点击 {channel_name} 频道失败: {e}")
                     continue
                 
                 # 尝试从当前频道获取指定数量的文章
@@ -181,7 +185,7 @@ class ToutiaoCrawler:
                             processed_ids.add(article_id)
                             self.all_channel_articles.append((channel_name, article_url, title))
                             collected_count += 1
-                            # print(f"已添加{channel_name}频道文章 {collected_count}: {title}")
+                            # print_to_queue(f"已添加{channel_name}频道文章 {collected_count}: {title}")
                             
                             # 如果达到需要的数量，停止收集
                             if collected_count >= need_count:
@@ -195,25 +199,25 @@ class ToutiaoCrawler:
                         self.driver.execute_script("window.scrollBy(0, 1000);")
                         time.sleep(3)
                 
-                print(f"{channel_name}频道文章收集完成，共 {collected_count} 篇")
+                print_to_queue(f"{channel_name}频道文章收集完成，共 {collected_count} 篇")
                 
         except Exception as e:
-            print(f"操作导航项时发生错误: {e}")
+            print_to_queue(f"操作导航项时发生错误: {e}")
     
     def process_articles(self):
         """处理爬取到的文章"""
         # 显示所有频道的文章信息
-        print("\n===== 所有频道文章汇总 =====")
+        print_to_queue("n===== 所有频道文章汇总 =====")
         for i, (channel, url, title) in enumerate(self.all_channel_articles):
-            print(f"{i+1}. {channel}: {title}")
-            print(f"   URL: {url}")
-        print(f"\n共获取到 {len(self.all_channel_articles)} 篇文章")
+            print_to_queue(f"{i+1}. {channel}: {title}")
+            print_to_queue(f"   URL: {url}")
+        print_to_queue(f"n共获取到 {len(self.all_channel_articles)} 篇文章")
         
         # 按频道统计文章数量
         channel_counts = {}
         for channel, _, _ in self.all_channel_articles:
             channel_counts[channel] = channel_counts.get(channel, 0) + 1
-        print(f"文章分布: {', '.join([f'{ch}: {count}篇' for ch, count in channel_counts.items()])}")
+        print_to_queue(f"文章分布: {', '.join([f'{ch}: {count}篇' for ch, count in channel_counts.items()])}")
         
         # 准备处理这些文章（转换为原有格式）
         results = []
@@ -224,7 +228,7 @@ class ToutiaoCrawler:
                 relative_url = match.group(1)
                 results.append((relative_url, f"[{channel}] {article_title}"))
         
-        print(f"\n准备处理 {len(results)} 条新闻")
+        print_to_queue(f"n准备处理 {len(results)} 条新闻")
         
         processed_count = 0
         max_articles = len(results)  # 处理所有收集到的文章
@@ -239,20 +243,20 @@ class ToutiaoCrawler:
             
             article_id_match = re.search(r'/article/(\d+)/', article_relative_url)
             if not article_id_match:
-                print(f"无法从URL中提取文章ID: {article_url}")
+                print_to_queue(f"无法从URL中提取文章ID: {article_url}")
                 continue
             
             article_id = article_id_match.group(1)
             
             if article_id in self.crawled_ids:
-                print(f"文章 {article_id} 已爬取过，跳过")
+                print_to_queue(f"文章 {article_id} 已爬取过，跳过")
                 continue
             
             processed_count += 1
-            print(f"\n正在处理第 {processed_count} 条新闻:")
-            print(f"标题: {article_title}")
-            print(f"URL: {article_url}")
-            print(f"文章ID: {article_id}")
+            print_to_queue(f"正在处理第 {processed_count} 条新闻:")
+            print_to_queue(f"标题: {article_title}")
+            print_to_queue(f"URL: {article_url}")
+            print_to_queue(f"文章ID: {article_id}")
             
             # 创建文章页面的浏览器配置
             article_options = Options()
@@ -289,7 +293,7 @@ class ToutiaoCrawler:
                 article_text = self.article_extractor.extract_content_with_bs(article_content_html)
                 
                 # 提取并下载图片
-                print(f"  开始提取图片...")
+                print_to_queue(f"  开始提取图片...")
                 soup = BeautifulSoup(article_content_html, 'html.parser')
                 img_tags = soup.find_all('img')
                 img_urls = [img.get('src') for img in img_tags if img.get('src')]
@@ -300,7 +304,7 @@ class ToutiaoCrawler:
                 
                 # 去重
                 img_urls = list(set(img_urls))
-                print(f"  找到 {len(img_urls)} 张图片")
+                print_to_queue(f"  找到 {len(img_urls)} 张图片")
                 
                 # 创建图片目录并下载
                 image_dir = os.path.join(article_media_dir, 'images')
@@ -308,7 +312,7 @@ class ToutiaoCrawler:
                 downloaded_images = self.media_downloader.download_images(img_urls, image_dir)
                 
                 # 提取并下载视频
-                print(f"  开始提取视频...")
+                print_to_queue(f"  开始提取视频...")
                 video_dir = os.path.join(article_media_dir, 'videos')
                 os.makedirs(video_dir, exist_ok=True)
                 downloaded_videos = self.media_downloader.extract_and_download_videos(article_content_html, video_dir)
@@ -322,30 +326,28 @@ class ToutiaoCrawler:
                     article_f.write(article_text)
                 
                 # 显示处理结果
-                print(f"文章内容已提取，长度: {len(article_text)} 字符")
-                print(f"图片下载完成，共 {len(downloaded_images)} 张")
-                print(f"视频下载完成，共 {len(downloaded_videos)} 个")
+                print_to_queue(f"文章内容已提取，长度: {len(article_text)} 字符")
+                print_to_queue(f"图片下载完成，共 {len(downloaded_images)} 张")
+                print_to_queue(f"视频下载完成，共 {len(downloaded_videos)} 个")
             else:
-                print("未能提取到文章内容")
+                print_to_queue("未能提取到文章内容")
         
-        print(f"\n处理完成，共处理了 {processed_count} 篇新文章")
-        print(f"媒体文件已保存到: {self.media_base_dir}")
-        print(f"文章ID记录保存在: {self.article_id_file}")
+        print_to_queue(f"n处理完成，共处理了 {processed_count} 篇新文章")
+        print_to_queue(f"媒体文件已保存到: {self.media_base_dir}")
+        print_to_queue(f"文章ID记录保存在: {self.article_id_file}")
     
-
-        
     def run(self):
         """运行爬虫主流程"""
         # 读取已爬取的文章ID
         self.crawled_ids = self.article_manager.read_article_ids()
-        print(f"已爬取的文章ID数量: {len(self.crawled_ids)}")
+        print_to_queue(f"已爬取的文章ID数量: {len(self.crawled_ids)}")
         
         try:
             # 创建浏览器实例
             self.driver = webdriver.Chrome(options=self.options)
             
             # 访问头条网站
-            print(f"正在访问: {self.url}")
+            print_to_queue(f"正在访问: {self.url}")
             self.driver.get(self.url)
             time.sleep(5)  # 等待页面完全加载
             
@@ -356,11 +358,11 @@ class ToutiaoCrawler:
             self.crawl_channels()
             
         except Exception as e:
-            print(f"发生错误: {e}")
+            print_to_queue(f"发生错误: {e}")
         finally:
             # 关闭浏览器
             if hasattr(self, 'driver'):
-                print("\n关闭浏览器...")
+                print_to_queue("n关闭浏览器...")
                 self.driver.quit()
         
         # 处理文章
@@ -369,9 +371,6 @@ class ToutiaoCrawler:
 
 # 如果直接运行此文件，执行爬虫
 if __name__ == "__main__":
-    # 导入必要的模块
-    from bs4 import BeautifulSoup
-    
     # 创建并运行爬虫
     crawler = ToutiaoCrawler()
     crawler.run()
