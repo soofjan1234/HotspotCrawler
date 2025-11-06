@@ -5,11 +5,13 @@ import queue
 # 添加项目根目录到sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, Response, stream_with_context, request
+from flask import Flask, Response, stream_with_context, request, render_template, jsonify
 import threading
 import time
 from datetime import datetime
 from utils.log_utils import print_to_queue, LogQueue
+from config.config_manager import ConfigManager
+from utils.scheduler_manager import get_scheduler
 
 # 导入爬虫
 from crawlers.toutiao_crawler import ToutiaoCrawler
@@ -17,6 +19,9 @@ from crawlers.toutiao_crawler import ToutiaoCrawler
 app = Flask(__name__)
 # 使用共享的日志队列
 q = LogQueue.get_queue()
+
+# 配置管理器
+config_manager = ConfigManager()
 
 # 全局爬虫实例
 crawler = None
@@ -27,8 +32,23 @@ crawler_running = False
 # 爬虫线程
 crawler_thread = None
 
-def print_to_queue(*args, sep=" ", end="\n"):
-    q.put(sep.join(map(str, args)) + ("" if end == "" else end))
+# 定时任务调度器
+@app.before_first_request
+def startup():
+    """应用启动时初始化定时任务"""
+    scheduler = get_scheduler()
+    scheduler.start()  # 启动定时任务
+
+# 在Flask应用关闭时停止定时任务
+import atexit
+
+@atexit.register
+def cleanup():
+    """应用完全关闭时清理资源"""
+    scheduler = get_scheduler()
+    scheduler.stop()
+
+# 使用从utils.log_utils导入的print_to_queue函数
 
 def sse_encode(text: str) -> str:
     lines = text.splitlines() or [""]

@@ -135,7 +135,7 @@ class ToutiaoCrawler:
     
     def crawl_channels(self):
         """爬取各个频道，按照分配比例获取文章"""
-        print_to_queue("n正在查找div.feed-default-nav-item元素...")
+        print_to_queue("正在查找div.feed-default-nav-item元素...")
         
         try:
             # 查找所有具有feed-default-nav-item类的div元素
@@ -207,11 +207,11 @@ class ToutiaoCrawler:
     def process_articles(self):
         """处理爬取到的文章"""
         # 显示所有频道的文章信息
-        print_to_queue("n===== 所有频道文章汇总 =====")
+        print_to_queue("===== 所有频道文章汇总 =====")
         for i, (channel, url, title) in enumerate(self.all_channel_articles):
             print_to_queue(f"{i+1}. {channel}: {title}")
             print_to_queue(f"   URL: {url}")
-        print_to_queue(f"n共获取到 {len(self.all_channel_articles)} 篇文章")
+        print_to_queue(f"共获取到 {len(self.all_channel_articles)} 篇文章")
         
         # 按频道统计文章数量
         channel_counts = {}
@@ -228,7 +228,11 @@ class ToutiaoCrawler:
                 relative_url = match.group(1)
                 results.append((relative_url, f"[{channel}] {article_title}"))
         
-        print_to_queue(f"n准备处理 {len(results)} 条新闻")
+        # 调试模式下，只保存文章ID，不执行后续的详细爬取
+        if self.config.is_debug:
+            print_to_queue("[调试模式] 已保存文章ID，跳过详细爬取")
+            return
+        print_to_queue(f"准备处理 {len(results)} 条新闻")
         
         processed_count = 0
         max_articles = len(results)  # 处理所有收集到的文章
@@ -281,9 +285,6 @@ class ToutiaoCrawler:
             article_media_dir = os.path.join(self.media_base_dir, f"{timestamp}_{safe_title[:16]}")
             os.makedirs(article_media_dir, exist_ok=True)
             
-            # 保存文章ID
-            self.article_manager.save_article_id(article_id)
-            
             # 提取文章内容
             content_match = re.search(r'syl-device-pc">(.*?)</article>', article_html, re.S)
             if content_match:
@@ -332,7 +333,7 @@ class ToutiaoCrawler:
             else:
                 print_to_queue("未能提取到文章内容")
         
-        print_to_queue(f"n处理完成，共处理了 {processed_count} 篇新文章")
+        print_to_queue(f"处理完成，共处理了 {processed_count} 篇新文章")
         print_to_queue(f"媒体文件已保存到: {self.media_base_dir}")
         print_to_queue(f"文章ID记录保存在: {self.article_id_file}")
     
@@ -362,7 +363,7 @@ class ToutiaoCrawler:
         finally:
             # 关闭浏览器
             if hasattr(self, 'driver'):
-                print_to_queue("n关闭浏览器...")
+                print_to_queue("关闭浏览器...")
                 self.driver.quit()
         
         # 处理文章

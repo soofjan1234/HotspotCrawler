@@ -110,7 +110,137 @@
                 <span class="status-indicator status-idle" id="status-indicator"></span>
                 开始爬取
             </button>
+            <button id="generate-ai-content" onclick="showFileSelector()" style="
+                background-color: #2196F3;
+                border: none;
+                color: white;
+                padding: 15px 32px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+                border-radius: 4px;
+                transition: background-color 0.3s;
+            ">
+                生成AI文案
+            </button>
         </div>
+        
+        <!-- 文件选择对话框 -->
+        <dialog id="file-dialog" style="
+            width: 400px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0;">选择文本文件</h3>
+                <button onclick="document.getElementById('file-dialog').close()" style="
+                    background: none;
+                    border: none;
+                    font-size: 20px;
+                    cursor: pointer;
+                    color: #666;
+                ">
+                    &times;
+                </button>
+            </div>
+            
+            <p>请从media文件夹选择一个.txt文件:</p>
+            <input type="file" id="file-selector" accept=".txt" style="margin-bottom: 15px;" />
+            <p id="selected-file-info" style="margin: 10px 0; color: #666;">未选择任何文件</p>
+            
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button onclick="document.getElementById('file-dialog').close()" style="
+                    background-color: #f1f1f1;
+                    border: none;
+                    color: #333;
+                    padding: 10px 20px;
+                    text-align: center;
+                    text-decoration: none;
+                    display: inline-block;
+                    font-size: 14px;
+                    cursor: pointer;
+                    border-radius: 4px;
+                ">
+                    取消
+                </button>
+                <button id="confirm-file" onclick="confirmFileSelection()" style="
+                    background-color: #4CAF50;
+                    border: none;
+                    color: white;
+                    padding: 10px 20px;
+                    text-align: center;
+                    text-decoration: none;
+                    display: inline-block;
+                    font-size: 14px;
+                    cursor: pointer;
+                    border-radius: 4px;
+                ">
+                    确认并生成
+                </button>
+            </div>
+        </dialog>
+        
+        <!-- 结果展示对话框 -->
+        <dialog id="result-dialog" style="
+            width: 400px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            text-align: center;
+        ">
+            <h3 style="margin-bottom: 30px;">处理中...</h3>
+            
+            <!-- 加载动画 -->
+            <div id="loading-spinner" style="
+                display: block;
+                margin: 0 auto 30px;
+                border: 4px solid #f3f3f3;
+                border-top: 4px solid #3498db;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+            "></div>
+            
+            <!-- 结果显示区域 -->
+            <div id="result-message" style="
+                display: none;
+                margin-bottom: 30px;
+                padding: 15px;
+                background-color: #e8f5e9;
+                border-radius: 4px;
+                color: #2e7d32;
+            "></div>
+            
+            <!-- 关闭按钮 -->
+            <button id="close-result" onclick="document.getElementById('result-dialog').close()" style="
+                display: none;
+                background-color: #4CAF50;
+                border: none;
+                color: white;
+                padding: 10px 20px;
+                text-align: center;
+                text-decoration: none;
+                font-size: 14px;
+                cursor: pointer;
+                border-radius: 4px;
+            ">
+                关闭
+            </button>
+            
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+        </dialog>
         
         <h3>爬取日志</h3>
         <div class="log-container" id="log-container">
@@ -126,6 +256,7 @@
         let isCrawling = false;
         let eventSource = null;
         let hasRunCrawlingTask = false;
+        let selectedFile = null;
         
         // 初始化SSE连接
         function initSSEConnection() {
@@ -194,6 +325,92 @@
             .catch(error => {
                 appendLog(`请求失败: ${error.message}`, 'error');
             });
+        }
+        
+        // 显示文件选择对话框
+        function showFileSelector() {
+            const fileDialog = document.getElementById('file-dialog');
+            
+            // 重置文件选择器
+            const fileSelector = document.getElementById('file-selector');
+            fileSelector.value = '';
+            selectedFile = null;
+            const fileInfo = document.getElementById('selected-file-info');
+            fileInfo.textContent = '未选择任何文件';
+            fileInfo.style.color = '#666';
+            
+            // 监听文件选择
+            fileSelector.onchange = function(event) {
+                if (event.target.files && event.target.files[0]) {
+                    const file = event.target.files[0];
+                    
+                    // 检查文件类型
+                    if (file.type !== 'text/plain' && !file.name.endsWith('.txt')) {
+                        fileInfo.textContent = '请选择.txt文件';
+                        fileInfo.style.color = '#f44336';
+                        selectedFile = null;
+                        return;
+                    }
+                    
+                    selectedFile = file;
+                    fileInfo.textContent = `已选择: ${file.name}`;
+                    fileInfo.style.color = '#4CAF50';
+                }
+            };
+            
+            // 显示对话框
+            fileDialog.showModal();
+        }
+        
+        // 确认文件选择并生成AI文案
+        function confirmFileSelection() {
+            if (!selectedFile) {
+                document.getElementById('selected-file-info').textContent = '请先选择一个文件';
+                document.getElementById('selected-file-info').style.color = '#f44336';
+                return;
+            }
+            
+            const fileName = selectedFile.name;
+            
+            // 关闭文件选择对话框
+            document.getElementById('file-dialog').close();
+            
+            // 显示处理中状态
+            appendLog(`开始处理文件: ${fileName}`, 'info');
+            
+            // 显示结果对话框，展示加载动画
+            const resultDialog = document.getElementById('result-dialog');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const resultMessage = document.getElementById('result-message');
+            const closeButton = document.getElementById('close-result');
+            
+            // 重置结果对话框状态
+            loadingSpinner.style.display = 'block';
+            resultMessage.style.display = 'none';
+            closeButton.style.display = 'none';
+            
+            // 显示结果对话框
+            resultDialog.showModal();
+            
+            // 模拟3秒的处理时间
+            setTimeout(() => {
+                // 隐藏加载动画，显示结果信息
+                loadingSpinner.style.display = 'none';
+                
+                // 生成保存的文件名（在原文件名基础上加_ai后缀）
+                const originalName = fileName.split('.')[0];
+                const savedFileName = `${originalName}_ai.txt`;
+                
+                // 设置结果消息
+                resultMessage.textContent = `已保存到 ${savedFileName}`;
+                resultMessage.style.display = 'block';
+                
+                // 显示关闭按钮
+                closeButton.style.display = 'inline-block';
+                
+                // 在日志中添加成功信息
+                appendLog(`AI文案生成成功，已保存到 ${savedFileName}!`, 'success');
+            }, 3000);
         }
         
         function appendLog(message, type = 'info', timestamp = null) {

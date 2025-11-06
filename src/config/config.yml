@@ -1,0 +1,19 @@
+# 爬虫配置文件
+# 调试模式：true - 仅提取文章ID不爬取完整内容，false - 正常爬取全部内容
+isDebug: false
+
+# # 路径配置
+# paths:
+#   # 媒体文件保存目录（相对于项目根目录）
+#   media_dir: 'media'
+#   # 内容文件路径（相对于项目根目录）
+#   content_file: '内容.txt'
+#   # 文章ID记录文件路径（相对于项目根目录）
+#   article_id_file: 'toutiao_article_id.txt'
+
+# # 爬虫设置
+# crawler:
+#   # 重试次数
+#   max_retries: 3
+#   # 请求超时时间（秒）
+#   timeout: 30
