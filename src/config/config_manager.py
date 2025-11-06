@@ -56,12 +56,16 @@ class ConfigManager:
         """从yaml配置文件加载配置"""
         try:
             with open(self.config_file, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
+                self.config = yaml.safe_load(f) or {}
                 # 设置is_debug配置，默认为True
-                self.is_debug = config.get('isDebug', True)
+                self.is_debug = self.config.get('isDebug', True)
+                # 设置apiKey配置，默认为空字符串
+                self.api_key = self.config.get('apiKey', '')
+        
         except Exception as e:
             # 如果读取配置文件失败，设置默认值
             print(f"警告: 无法读取配置文件 {self.config_file}: {e}")
+            self.config = {}
             self.is_debug = True
     
     def get_system_info(self):
@@ -74,3 +78,15 @@ class ConfigManager:
             'article_id_file': self.article_id_file,
             'is_debug': self.is_debug
         }
+    
+    def get(self, key, default=None):
+        """从配置中获取指定键的值
+        
+        Args:
+            key: 要获取的配置键名
+            default: 当键不存在时返回的默认值
+            
+        Returns:
+            配置值或默认值
+        """
+        return self.config.get(key, default)

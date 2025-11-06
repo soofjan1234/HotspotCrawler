@@ -2,6 +2,8 @@
 # 调试模式：true - 仅提取文章ID不爬取完整内容，false - 正常爬取全部内容
 isDebug: false
 
+apiKey: e220b53c-e141-4de3-9909-5e96e2bdd8b1
+
 # # 路径配置
 # paths:
 #   # 媒体文件保存目录（相对于项目根目录）

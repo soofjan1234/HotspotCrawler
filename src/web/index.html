@@ -370,13 +370,13 @@
                 return;
             }
             
-            const fileName = selectedFile.name;
+            const filePath = selectedFile.filePath;
             
             // 关闭文件选择对话框
             document.getElementById('file-dialog').close();
             
             // 显示处理中状态
-            appendLog(`开始处理文件: ${fileName}`, 'info');
+            appendLog(`开始处理文件: ${filePath}`, 'info');
             
             // 显示结果对话框，展示加载动画
             const resultDialog = document.getElementById('result-dialog');
@@ -392,25 +392,62 @@
             // 显示结果对话框
             resultDialog.showModal();
             
-            // 模拟3秒的处理时间
-            setTimeout(() => {
-                // 隐藏加载动画，显示结果信息
+            // 调用后端API生成AI文案
+            fetch('/generate-ai-content', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ file_path: filePath })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // 隐藏加载动画
                 loadingSpinner.style.display = 'none';
                 
-                // 生成保存的文件名（在原文件名基础上加_ai后缀）
-                const originalName = fileName.split('.')[0];
-                const savedFileName = `${originalName}_ai.txt`;
+                if (data.status === 'success') {
+                    // 设置成功消息
+                    resultMessage.textContent = `已保存到 ${data.output_file}`;
+                    resultMessage.style.display = 'block';
+                    resultMessage.style.color = '#4CAF50';
+                    
+                    // 显示关闭按钮
+                    closeButton.style.display = 'inline-block';
+                    
+                    // 在日志中添加成功信息
+                    appendLog(`AI文案生成成功，已保存到 ${data.output_file}!`, 'success');
+                    
+                    // 可以在这里添加展示生成内容的功能
+                    console.log('生成的文案内容:', data.content);
+                } else {
+                    // 设置错误消息
+                    resultMessage.textContent = `生成失败: ${data.message}`;
+                    resultMessage.style.display = 'block';
+                    resultMessage.style.color = '#f44336';
+                    closeButton.style.display = 'inline-block';
+                    
+                    // 在日志中添加错误信息
+                    appendLog(`AI文案生成失败: ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                // 隐藏加载动画
+                loadingSpinner.style.display = 'none';
                 
-                // 设置结果消息
-                resultMessage.textContent = `已保存到 ${savedFileName}`;
+                // 设置错误消息
+                resultMessage.textContent = `请求失败: ${error.message}`;
                 resultMessage.style.display = 'block';
-                
-                // 显示关闭按钮
+                resultMessage.style.color = '#f44336';
                 closeButton.style.display = 'inline-block';
                 
-                // 在日志中添加成功信息
-                appendLog(`AI文案生成成功，已保存到 ${savedFileName}!`, 'success');
-            }, 3000);
+                // 在日志中添加错误信息
+                appendLog(`AI文案生成请求失败: ${error.message}`, 'error');
+            })
         }
         
         function appendLog(message, type = 'info', timestamp = null) {
@@ -438,6 +475,8 @@
                 appendLog('爬取任务已完成', 'success');
             }
         }
+        
+
         
         // 页面加载完成后初始化SSE连接
         window.addEventListener('load', function() {
