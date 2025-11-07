@@ -127,55 +127,105 @@ def index():
 def generate_ai_content():
     """
     生成AI文案接口
-    接收文件路径参数，读取文件内容，生成新文案并保存
+    接收文件上传，读取文件内容，生成新文案并保存到generate文件夹
+    按日期分类存储：YYYYMMDD/时间戳_标题/内容
     """
     try:
-        # 获取请求参数
-        data = request.get_json()
-        if not data or "file_path" not in data:
-            return jsonify({"status": "error", "message": "缺少文件路径参数"}), 400
+        # 检查是否有文件上传
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "没有文件上传"}), 400
         
-        file_path = data["file_path"]
-        print(f"Received file_path: {file_path}")
-        # 验证文件是否存在
-        if not os.path.exists(file_path):
-            return jsonify({"status": "error", "message": f"文件不存在: {file_path}"}), 404
+        file = request.files['file']
+        
+        # 检查文件名是否为空
+        if file.filename == '':
+            return jsonify({"status": "error", "message": "未选择文件"}), 400
+        
+        # 验证文件类型
+        if not file.filename.endswith('.txt'):
+            return jsonify({"status": "error", "message": "请上传.txt文件"}), 400
+        
+        # 获取上传的文件名
+        original_filename = file.filename
+        print(f"Received file: {original_filename}")
         
         # 记录日志
-        print_to_queue(f"开始生成AI文案，文件路径: {file_path}")
+        print_to_queue(f"开始生成AI文案，文件: {original_filename}")
+        
+        # 创建基础generate文件夹（如果不存在）
+        base_generate_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'generate')
+        os.makedirs(base_generate_dir, exist_ok=True)
+        
+        # 获取当前日期和时间
+        now = datetime.now()
+        date_folder = now.strftime("%Y%m%d")  # YYYYMMDD格式的日期文件夹
+        time_part = now.strftime("%H%M%S")    # HHMMSS格式的时间部分
+        
+        # 创建日期文件夹
+        date_dir = os.path.join(base_generate_dir, date_folder)
+        os.makedirs(date_dir, exist_ok=True)
+        
+        article_dir = os.path.join(date_dir, f"{time_part}")
+        os.makedirs(article_dir, exist_ok=True)
+        
+        # 保存上传的文件到临时位置
+        temp_file_path = os.path.join(article_dir, f"temp_{now.strftime('%Y%m%d_%H%M%S_%f')}.txt")
+        file.save(temp_file_path)
+        
+        # 读取原始内容
+        with open(temp_file_path, 'r', encoding='utf-8') as f:
+            original_content = f.read()
         
         # 创建AI生成器实例
         try:
             ai_generator = create_ai_generator(config_manager)
         except Exception as e:
+            # 清理临时文件
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
             return jsonify({"status": "error", "message": f"创建AI生成器失败: {str(e)}"}), 500
         
         # 生成AI文案
-        generated_content = ai_generator.generate_from_file(file_path)
+        try:
+            generated_content = ai_generator.generate_from_file(temp_file_path)
+        except Exception as e:
+            # 清理临时文件
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            return jsonify({"status": "error", "message": f"生成AI文案失败: {str(e)}"}), 500
         
         if not generated_content:
+            # 清理临时文件
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
             return jsonify({"status": "error", "message": "AI文案生成失败"}), 500
         
-        # 生成带时间戳的输出文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name = os.path.basename(file_path)
-        name_without_ext = os.path.splitext(base_name)[0]
-        output_file_name = f"generate_{name_without_ext}_{timestamp}.txt"
-        output_file_path = os.path.join(os.path.dirname(file_path), output_file_name)
+        # 生成最终内容（原内容 + 生成的文案）
+        final_content = f"# 原始内容\n{original_content}\n\n# AI生成文案\n{generated_content}"
         
-        # 保存生成的文案
+        # 生成输出文件名
+        output_file_name = f"content_ai.txt"
+        output_file_path = os.path.join(article_dir, output_file_name)
+        
+        # 保存生成的文案（包含原内容）
         with open(output_file_path, 'w', encoding='utf-8') as f:
-            f.write(generated_content)
+            f.write(final_content)
+        
+        # 清理临时文件
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
         
         # 记录日志
-        print_to_queue(f"AI文案生成成功，已保存到: {output_file_path}")
+        relative_path = os.path.join(date_folder, time_part, output_file_name)
+        print_to_queue(f"AI文案生成成功，已保存到: {relative_path}")
         
         # 返回结果
         return jsonify({
             "status": "success",
             "message": "AI文案生成成功",
-            "output_file": output_file_path,
-            "content": generated_content
+            "output_file": output_file_name,
+            "content": final_content,
+            "path": relative_path
         })
         
     except Exception as e:

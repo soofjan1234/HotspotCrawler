@@ -10,6 +10,7 @@ import json
 import logging
 import requests
 from typing import Dict, Optional, List, Any
+from config.config_manager import ConfigManager
 
 # 配置日志
 logging.basicConfig(
@@ -39,6 +40,8 @@ class AIGenerator:
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {api_key}'
         }
+
+        self.config_manager = ConfigManager()
     
     def read_text_file(self, file_path: str) -> Optional[str]:
         """
@@ -68,8 +71,8 @@ class AIGenerator:
             logger.error(f"读取文件时发生错误: {str(e)}")
             return None
     
-    def generate_content(self, prompt: str, model: str = "volcengine_byteplus-llama-3-8b-instruct", 
-                         temperature: float = 0.7, max_tokens: int = 1000) -> Optional[str]:
+    def generate_content(self, prompt: str, model: str = "deepseek-v3-1-terminus", 
+                         temperature: float = 0.7, max_tokens: int = 10000) -> Optional[str]:
         """
         调用AI API生成内容
         
@@ -87,7 +90,7 @@ class AIGenerator:
             data = {
                 "model": model,
                 "messages": [
-                    {"role": "system", "content": "你是一个专业的文案生成助手，擅长根据提供的内容创建高质量、吸引人的文案。"},
+                    {"role": "system", "content": self.config_manager.get('prompt')},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": temperature,

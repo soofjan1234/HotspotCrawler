@@ -126,6 +126,22 @@
             ">
                 生成AI文案
             </button>
+            <button id="clear-logs" onclick="clearLogs()" style="
+                background-color: #FF9800;
+                border: none;
+                color: white;
+                padding: 15px 32px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+                border-radius: 4px;
+                transition: background-color 0.3s;
+            ">
+                清理日志
+            </button>
         </div>
         
         <!-- 文件选择对话框 -->
@@ -330,31 +346,31 @@
         // 显示文件选择对话框
         function showFileSelector() {
             const fileDialog = document.getElementById('file-dialog');
+            const fileSelector = document.getElementById('file-selector');
+            const fileInfo = document.getElementById('selected-file-info');
             
             // 重置文件选择器
-            const fileSelector = document.getElementById('file-selector');
             fileSelector.value = '';
-            selectedFile = null;
-            const fileInfo = document.getElementById('selected-file-info');
             fileInfo.textContent = '未选择任何文件';
             fileInfo.style.color = '#666';
             
-            // 监听文件选择
-            fileSelector.onchange = function(event) {
-                if (event.target.files && event.target.files[0]) {
-                    const file = event.target.files[0];
+            // 监听文件选择变化
+            fileSelector.onchange = function() {
+                if (this.files && this.files.length > 0) {
+                    const file = this.files[0];
                     
                     // 检查文件类型
                     if (file.type !== 'text/plain' && !file.name.endsWith('.txt')) {
                         fileInfo.textContent = '请选择.txt文件';
                         fileInfo.style.color = '#f44336';
-                        selectedFile = null;
                         return;
                     }
                     
-                    selectedFile = file;
                     fileInfo.textContent = `已选择: ${file.name}`;
                     fileInfo.style.color = '#4CAF50';
+                } else {
+                    fileInfo.textContent = '未选择任何文件';
+                    fileInfo.style.color = '#666';
                 }
             };
             
@@ -364,19 +380,20 @@
         
         // 确认文件选择并生成AI文案
         function confirmFileSelection() {
-            if (!selectedFile) {
+            const fileInput = document.getElementById('file-selector');
+            if (!fileInput.files || fileInput.files.length === 0) {
                 document.getElementById('selected-file-info').textContent = '请先选择一个文件';
                 document.getElementById('selected-file-info').style.color = '#f44336';
                 return;
             }
             
-            const filePath = selectedFile.filePath;
+            const file = fileInput.files[0];
             
             // 关闭文件选择对话框
             document.getElementById('file-dialog').close();
             
             // 显示处理中状态
-            appendLog(`开始处理文件: ${filePath}`, 'info');
+            appendLog(`开始处理文件: ${file.name}`, 'info');
             
             // 显示结果对话框，展示加载动画
             const resultDialog = document.getElementById('result-dialog');
@@ -392,13 +409,14 @@
             // 显示结果对话框
             resultDialog.showModal();
             
+            // 创建FormData对象用于文件上传
+            const formData = new FormData();
+            formData.append('file', file);
+            
             // 调用后端API生成AI文案
             fetch('/generate-ai-content', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ file_path: filePath })
+                body: formData
             })
             .then(response => {
                 if (!response.ok) {
@@ -476,7 +494,14 @@
             }
         }
         
-
+        // 清理日志
+        function clearLogs() {
+            const logContainer = document.getElementById('log-container');
+            // 清空日志容器
+            logContainer.innerHTML = '';
+            // 添加一条系统就绪信息
+            appendLog('系统就绪，点击"开始爬取"按钮启动爬虫任务...', 'info');
+        }
         
         // 页面加载完成后初始化SSE连接
         window.addEventListener('load', function() {

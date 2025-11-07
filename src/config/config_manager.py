@@ -57,10 +57,6 @@ class ConfigManager:
         try:
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 self.config = yaml.safe_load(f) or {}
-                # 设置is_debug配置，默认为True
-                self.is_debug = self.config.get('isDebug', True)
-                # 设置apiKey配置，默认为空字符串
-                self.api_key = self.config.get('apiKey', '')
         
         except Exception as e:
             # 如果读取配置文件失败，设置默认值

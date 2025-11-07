@@ -97,16 +97,24 @@ class ToutiaoCrawler:
             need_count = self.article_allocation.get("今日要闻", 1)
             print_to_queue(f"需要从今日要闻获取 {need_count} 篇文章")
             
-            # 查找今日要闻区域
-            html = self.driver.page_source
-            
             # 保存已处理的文章ID，避免重复
             processed_ids = set()
             collected_count = 0
             
+            # 最大滚动次数，防止无限滚动
+            max_scrolls = 10
+            scroll_count = 0
+            
+            # 连续未找到新文章的次数
+            no_new_articles_count = 0
+            max_no_new_articles = 3
+            
             # 尝试获取指定数量的文章
-            for _ in range(need_count * 3):  # 多尝试几次以确保能获取足够数量
-                # 使用通用函数提取首页未爬取的文章
+            while collected_count < need_count and scroll_count < max_scrolls:
+                # 获取当前页面HTML
+                html = self.driver.page_source
+                
+                # 尝试从当前页面提取未爬取的文章
                 article_url, article_title, found_homepage_article = self.article_extractor.extract_uncrawled_article(
                     html, "今日要闻", self.crawled_ids.union(processed_ids), is_homepage=True
                 )
@@ -119,14 +127,31 @@ class ToutiaoCrawler:
                         processed_ids.add(article_id)
                         self.all_channel_articles.append(("今日要闻", article_url, article_title))
                         collected_count += 1
-                        # print_to_queue(f"已添加首页文章: {article_title}")
+                        print_to_queue(f"已添加首页文章: {article_title}")
                         
-                        # 如果达到需要的数量，停止收集
-                        if collected_count >= need_count:
-                            break
+                        # 重置连续未找到新文章的计数
+                        no_new_articles_count = 0
+                else:
+                    # 未找到新文章，增加计数
+                    no_new_articles_count += 1
+                    print_to_queue(f"首页未找到新文章，连续未找到次数: {no_new_articles_count}")
                 
-                # 短暂休眠避免请求过快
-                time.sleep(0.5)
+                # 如果连续多次未找到新文章，或者需要继续获取更多文章，则滚动加载
+                if (no_new_articles_count >= max_no_new_articles or collected_count < need_count) and scroll_count < max_scrolls:
+                    print_to_queue(f"首页文章重复或不足，开始滚动加载更多内容...")
+                    # 滚动到页面底部
+                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    scroll_count += 1
+                    print_to_queue(f"首页已滚动 {scroll_count}/{max_scrolls} 次")
+                    time.sleep(3)  # 等待页面加载
+                    no_new_articles_count = 0  # 重置计数
+                else:
+                    # 短暂休眠避免请求过快
+                    time.sleep(0.5)
+                
+                # 如果达到需要的数量，停止收集
+                if collected_count >= need_count:
+                    break
                 
             print_to_queue(f"今日要闻文章收集完成，共 {collected_count} 篇")
             
@@ -170,8 +195,16 @@ class ToutiaoCrawler:
                     print_to_queue(f"点击 {channel_name} 频道失败: {e}")
                     continue
                 
+                # 最大滚动次数，防止无限滚动
+                max_scrolls = 10
+                scroll_count = 0
+                
+                # 连续未找到新文章的次数
+                no_new_articles_count = 0
+                max_no_new_articles = 3
+                
                 # 尝试从当前频道获取指定数量的文章
-                for i in range(need_count * 3):  # 多尝试几次以确保能获取足够数量
+                while collected_count < need_count and scroll_count < max_scrolls:
                     html = self.driver.page_source
                     title, article_url = self.article_extractor.extract_uncrawled_article(
                         html, channel_name, self.crawled_ids.union(processed_ids), is_homepage=False
@@ -185,19 +218,36 @@ class ToutiaoCrawler:
                             processed_ids.add(article_id)
                             self.all_channel_articles.append((channel_name, article_url, title))
                             collected_count += 1
-                            # print_to_queue(f"已添加{channel_name}频道文章 {collected_count}: {title}")
+                            print_to_queue(f"已添加{channel_name}频道文章 {collected_count}: {title}")
                             
-                            # 如果达到需要的数量，停止收集
-                            if collected_count >= need_count:
-                                break
-                        
-                        # 滚动页面加载更多文章
-                        self.driver.execute_script("window.scrollBy(0, 800);")
-                        time.sleep(2)
+                            # 重置连续未找到新文章的计数
+                            no_new_articles_count = 0
+                            
+                            # 滚动页面加载更多文章
+                            self.driver.execute_script("window.scrollBy(0, 800);")
+                            time.sleep(2)
                     else:
-                        # 如果没找到文章，滚动更多
-                        self.driver.execute_script("window.scrollBy(0, 1000);")
-                        time.sleep(3)
+                        # 未找到新文章，增加计数
+                        no_new_articles_count += 1
+                        print_to_queue(f"{channel_name}频道未找到新文章，连续未找到次数: {no_new_articles_count}")
+                        
+                        # 如果连续多次未找到新文章，说明当前页面可能都是重复的，需要滚动加载更多
+                        if no_new_articles_count >= max_no_new_articles:
+                            print_to_queue(f"{channel_name}频道文章重复，开始滚动加载更多内容...")
+                            # 滚动到页面底部
+                            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                            scroll_count += 1
+                            print_to_queue(f"{channel_name}频道已滚动 {scroll_count}/{max_scrolls} 次")
+                            time.sleep(3)  # 等待页面加载
+                            no_new_articles_count = 0  # 重置计数
+                        else:
+                            # 小幅度滚动
+                            self.driver.execute_script("window.scrollBy(0, 500);")
+                            time.sleep(2)
+                    
+                    # 如果达到需要的数量，停止收集
+                    if collected_count >= need_count:
+                        break
                 
                 print_to_queue(f"{channel_name}频道文章收集完成，共 {collected_count} 篇")
                 
@@ -229,7 +279,7 @@ class ToutiaoCrawler:
                 results.append((relative_url, f"[{channel}] {article_title}"))
         
         # 调试模式下，只保存文章ID，不执行后续的详细爬取
-        if self.config.is_debug:
+        if self.config.get('debug', False):
             print_to_queue("[调试模式] 已保存文章ID，跳过详细爬取")
             return
         print_to_queue(f"准备处理 {len(results)} 条新闻")
@@ -280,11 +330,21 @@ class ToutiaoCrawler:
             # 创建安全的文件名
             safe_title = re.sub(r'[\\/:*?"<>|]', '_', article_title)
             
-            # 创建保存目录
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            article_media_dir = os.path.join(self.media_base_dir, f"{timestamp}_{safe_title[:16]}")
+            # 创建按日期分类的保存目录结构
+            # 1. 首先创建日期文件夹 (YYYYMMDD)
+            current_date = datetime.now().strftime('%Y%m%d')
+            date_dir = os.path.join(self.media_base_dir, current_date)
+            
+            # 2. 在日期文件夹下创建时间戳_标题文件夹 (HHMMSS_标题)
+            time_part = datetime.now().strftime('%H%M%S')
+            article_media_dir = os.path.join(date_dir, f"{time_part}_{safe_title[:16]}")
+            
+            # 创建完整的目录结构
             os.makedirs(article_media_dir, exist_ok=True)
             
+            # 保存文章ID到文件
+            self.article_manager.save_article_id(article_id)
+
             # 提取文章内容
             content_match = re.search(r'syl-device-pc">(.*?)</article>', article_html, re.S)
             if content_match:
@@ -321,7 +381,6 @@ class ToutiaoCrawler:
                 # 保存文章内容到文件
                 article_content_file = os.path.join(article_media_dir, 'content.txt')
                 with open(article_content_file, 'w', encoding='utf-8') as article_f:
-                    article_f.write(f"第 {i+1} 条新闻\n")
                     article_f.write(f"标题: {article_title}\n")
                     article_f.write("正文内容:\n")
                     article_f.write(article_text)
