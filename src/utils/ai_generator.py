@@ -26,13 +26,13 @@ class AIGenerator:
     封装与AI API的交互，提供从文本文件生成新文案的功能
     """
     
-    def __init__(self, api_key: str, api_url: str = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"):
+    def __init__(self, api_key: str, api_url: str = "https://api.deepseek.com/chat/completions"):
         """
         初始化AI生成器
         
         Args:
             api_key: API访问密钥
-            api_url: API请求地址，默认为火山引擎Ark地址
+            api_url: API请求地址，默认为DeepSeek地址
         """
         self.api_key = api_key
         self.api_url = api_url
@@ -71,8 +71,8 @@ class AIGenerator:
             logger.error(f"读取文件时发生错误: {str(e)}")
             return None
     
-    def generate_content(self, prompt: str, model: str = "deepseek-v3-1-terminus", 
-                         temperature: float = 0.7, max_tokens: int = 10000) -> Optional[str]:
+    def generate_content(self, prompt: str, model: str = "deepseek-chat", 
+                         temperature: float = 0.7, max_tokens: int = 8192) -> Optional[str]:
         """
         调用AI API生成内容
         

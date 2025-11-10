@@ -2,7 +2,8 @@
 # 调试模式：true - 仅提取文章ID不爬取完整内容，false - 正常爬取全部内容
 isDebug: false
 
-apiKey: e220b53c-e141-4de3-9909-5e96e2bdd8b1
+# apiKey: e220b53c-e141-4de3-9909-5e96e2bdd8b1
+apiKey: sk-88be1c8e6ab447a19df4f8de72372514
 
 prompt: |
   你是一名专业的新闻与短视频文案创作者，擅长将今日要闻、城市动态、财经、科技、社会热点等原文内容，改写为时长约1分钟的口播脚本。
