@@ -1,5 +1,6 @@
 venv
 media
+generate
 logs
 __pycache__
 *.txt
