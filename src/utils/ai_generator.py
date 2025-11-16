@@ -26,22 +26,23 @@ class AIGenerator:
     封装与AI API的交互，提供从文本文件生成新文案的功能
     """
     
-    def __init__(self, api_key: str, api_url: str = "https://api.deepseek.com/chat/completions"):
+    def __init__(self, api_key: str):
         """
         初始化AI生成器
         
         Args:
             api_key: API访问密钥
-            api_url: API请求地址，默认为DeepSeek地址
         """
         self.api_key = api_key
-        self.api_url = api_url
+        self.config_manager = ConfigManager()
+        
+        # 从配置中读取API URL，如果配置中没有则使用默认值
+        self.api_url = self.config_manager.get('apiUrl', 'https://api.deepseek.com/chat/completions')
+        
         self.headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {api_key}'
         }
-
-        self.config_manager = ConfigManager()
     
     def read_text_file(self, file_path: str) -> Optional[str]:
         """
@@ -71,7 +72,7 @@ class AIGenerator:
             logger.error(f"读取文件时发生错误: {str(e)}")
             return None
     
-    def generate_content(self, prompt: str, model: str = "deepseek-chat", 
+    def generate_content(self, prompt: str, model: str = None, 
                          temperature: float = 0.7, max_tokens: int = 8192) -> Optional[str]:
         """
         调用AI API生成内容
@@ -86,6 +87,10 @@ class AIGenerator:
             生成的文案内容，如果失败返回None
         """
         try:
+            # 从配置中读取默认模型，如果传入了model参数则使用传入的值
+            if model is None:
+                model = self.config_manager.get('defaultModel', 'deepseek-chat')
+            
             # 构造请求数据
             data = {
                 "model": model,
