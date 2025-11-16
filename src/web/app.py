@@ -4,8 +4,27 @@ import queue
 import requests
 from datetime import datetime
 
-# 添加项目根目录到sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 处理PyInstaller打包后的路径问题
+def setup_path():
+    """设置Python路径，支持开发和打包环境"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller打包环境
+        application_path = os.path.dirname(sys.executable)
+        # 将src目录添加到路径
+        src_path = os.path.join(application_path, 'src')
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+        # 将项目根目录添加到路径
+        if application_path not in sys.path:
+            sys.path.insert(0, application_path)
+    else:
+        # 开发环境
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+
+# 设置路径
+setup_path()
 
 from flask import Flask, Response, stream_with_context, request, render_template, jsonify
 import threading
@@ -14,6 +33,7 @@ from utils.log_utils import print_to_queue, LogQueue
 from config.config_manager import ConfigManager
 from utils.scheduler_manager import get_scheduler
 from utils.ai_generator import AIGenerator, create_ai_generator
+from utils.pyinstaller_utils import setup_environment
 
 # 导入爬虫
 from crawlers.toutiao_crawler import ToutiaoCrawler
@@ -33,6 +53,10 @@ crawler_running = False
 
 # 爬虫线程
 crawler_thread = None
+
+# 设置运行环境（检查Chrome等）
+if not setup_environment():
+    print("环境设置失败，但程序将继续运行...")
 
 # 定时任务调度器
 @app.before_first_request
@@ -121,7 +145,30 @@ def run_crawler():
 
 @app.route("/")
 def index():
-    return open("index.html", "r", encoding="utf-8").read()
+    """首页路由，处理index.html文件路径"""
+    try:
+        # 尝试在不同位置查找index.html
+        possible_paths = [
+            "index.html",  # 当前目录
+            "src/web/index.html",  # 开发环境相对路径
+            os.path.join(os.path.dirname(__file__), "index.html"),  # app.py同目录
+            os.path.join(os.path.dirname(sys.executable), "src", "web", "index.html"),  # 打包环境
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return open(path, "r", encoding="utf-8").read()
+        
+        # 如果都找不到，尝试使用PyInstaller的资源路径
+        if hasattr(sys, '_MEIPASS'):
+            resource_path = os.path.join(sys._MEIPASS, 'src', 'web', 'index.html')
+            if os.path.exists(resource_path):
+                return open(resource_path, "r", encoding="utf-8").read()
+        
+        return "Error: index.html not found", 404
+        
+    except Exception as e:
+        return f"Error reading index.html: {str(e)}", 500
 
 @app.route("/generate-ai-content", methods=["POST"])
 def generate_ai_content():
@@ -152,8 +199,16 @@ def generate_ai_content():
         # 记录日志
         print_to_queue(f"开始生成AI文案，文件: {original_filename}")
         
-        # 创建基础generate文件夹（如果不存在）
-        base_generate_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'generate')
+        # 创建基础generate文件夹（如果不存在）- 与media保持一致的路径
+        # 使用与config_manager相同的逻辑获取项目根目录
+        if getattr(sys, 'frozen', False):
+            # PyInstaller打包环境
+            project_root = os.path.dirname(sys.executable)
+        else:
+            # 开发环境
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        base_generate_dir = os.path.join(project_root, 'generate')
         os.makedirs(base_generate_dir, exist_ok=True)
         
         # 获取当前日期和时间
@@ -215,8 +270,8 @@ def generate_ai_content():
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
         
-        # 记录日志
-        relative_path = os.path.join(date_folder, time_part, output_file_name)
+        # 记录日志 - 使用相对于项目根目录的路径（与media保持一致）
+        relative_path = os.path.relpath(output_file_path, project_root)
         print_to_queue(f"AI文案生成成功，已保存到: {relative_path}")
         
         # 返回结果

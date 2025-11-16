@@ -1,6 +1,7 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
 import time
 import re
 import os
@@ -23,6 +24,9 @@ from datetime import datetime
 # 从工具模块导入print_to_queue
 from utils.log_utils import print_to_queue
 
+# 导入ChromeDriver管理工具
+from utils.pyinstaller_utils import ensure_chrome_driver
+
 class ToutiaoCrawler:
     """头条爬虫主类"""
     
@@ -44,6 +48,14 @@ class ToutiaoCrawler:
         self.article_extractor = ArticleExtractor()
         self.media_downloader = MediaDownloader()
         self.article_manager = ArticleManager(self.article_id_file)
+        
+        # 初始化ChromeDriver服务
+        try:
+            self.chrome_service = ensure_chrome_driver()
+            print_to_queue("ChromeDriver服务初始化成功")
+        except Exception as e:
+            print_to_queue(f"ChromeDriver服务初始化失败: {e}")
+            self.chrome_service = None
         
         # 存储所有频道的文章信息
         self.all_channel_articles = []
@@ -319,7 +331,10 @@ class ToutiaoCrawler:
             article_options.add_argument(f"user-agent={self.config.user_agent}")
             
             # 打开文章页面
-            article_driver = webdriver.Chrome(options=article_options)
+            if self.chrome_service:
+                article_driver = webdriver.Chrome(service=self.chrome_service, options=article_options)
+            else:
+                article_driver = webdriver.Chrome(options=article_options)
             article_driver.get(article_url)
             time.sleep(3)  # 等待页面加载
             
@@ -404,7 +419,11 @@ class ToutiaoCrawler:
         
         try:
             # 创建浏览器实例
-            self.driver = webdriver.Chrome(options=self.options)
+            if self.chrome_service:
+                self.driver = webdriver.Chrome(service=self.chrome_service, options=self.options)
+            else:
+                # 回退到默认方式
+                self.driver = webdriver.Chrome(options=self.options)
             
             # 访问头条网站
             print_to_queue(f"正在访问: {self.url}")

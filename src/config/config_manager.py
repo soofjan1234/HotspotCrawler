@@ -1,6 +1,7 @@
 import os
 import platform
 import yaml
+import sys
 
 class ConfigManager:
     """配置管理类，负责处理系统检测和路径配置"""
@@ -9,7 +10,7 @@ class ConfigManager:
         # 检测操作系统类型
         self.system = platform.system()  # 'Windows', 'Darwin' (Mac), etc.
         
-        # 获取项目根目录（使用相对路径）
+        # 获取项目根目录（支持打包环境）
         self.project_root = self._get_project_root()
         
         # 初始化配置
@@ -18,10 +19,20 @@ class ConfigManager:
         self._load_yaml_config()
     
     def _get_project_root(self):
-        """获取项目根目录的绝对路径"""
-        # 获取当前文件所在目录
-        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return current_dir
+        """获取项目根目录的绝对路径，支持开发环境和打包环境"""
+        try:
+            # PyInstaller创建的临时文件夹
+            if hasattr(sys, '_MEIPASS'):
+                # 打包环境，返回可执行文件所在目录
+                return os.path.dirname(sys.executable)
+            else:
+                # 开发环境
+                current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                return current_dir
+        except Exception:
+            # 回退到默认逻辑
+            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            return current_dir
     
     def _init_paths(self):
         """初始化路径配置"""
@@ -55,12 +66,23 @@ class ConfigManager:
     def _load_yaml_config(self):
         """从yaml配置文件加载配置"""
         try:
-            with open(self.config_file, 'r', encoding='utf-8') as f:
+            # 支持打包环境的配置文件路径
+            config_file = self.config_file
+            if not os.path.exists(config_file):
+                # 尝试在打包环境中查找配置文件
+                try:
+                    import sys
+                    if hasattr(sys, '_MEIPASS'):
+                        config_file = os.path.join(sys._MEIPASS, 'src', 'config', 'config.yml')
+                except:
+                    pass
+            
+            with open(config_file, 'r', encoding='utf-8') as f:
                 self.config = yaml.safe_load(f) or {}
         
         except Exception as e:
             # 如果读取配置文件失败，设置默认值
-            print(f"警告: 无法读取配置文件 {self.config_file}: {e}")
+            print(f"警告: 无法读取配置文件 {config_file}: {e}")
             self.config = {}
             self.is_debug = True
     
